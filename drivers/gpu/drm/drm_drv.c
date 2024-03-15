@@ -33,10 +33,10 @@
 #include <linux/mount.h>
 #include <linux/slab.h>
 #include <drm/drmP.h>
+#include <drm/drm_client.h>
 #include "drm_crtc_internal.h"
 #include "drm_legacy.h"
 #include "drm_internal.h"
-#include "drm_crtc_internal.h"
 
 /*
  * drm_debug: Enable debug output.
@@ -469,6 +469,16 @@ static void drm_fs_inode_free(struct inode *inode)
 	}
 }
 
+static void drm_bridge_enable_work(struct kthread_work *work)
+{
+	struct drm_device *dev = container_of(work, typeof(*dev),
+					      bridge_enable_work);
+	struct drm_bridge *bridge = dev->bridge;
+
+	__drm_bridge_pre_enable(bridge);
+	__drm_bridge_enable(bridge);
+}
+
 /**
  * drm_dev_init - Initialise new DRM device
  * @dev: DRM device
@@ -496,6 +506,9 @@ int drm_dev_init(struct drm_device *dev,
 		 struct drm_driver *driver,
 		 struct device *parent)
 {
+	static const struct sched_param param = {
+		.sched_priority = MAX_RT_PRIO - 1
+	};
 	int ret;
 
 	kref_init(&dev->ref);
@@ -503,6 +516,8 @@ int drm_dev_init(struct drm_device *dev,
 	dev->driver = driver;
 
 	INIT_LIST_HEAD(&dev->filelist);
+	INIT_LIST_HEAD(&dev->filelist_internal);
+	INIT_LIST_HEAD(&dev->clientlist);
 	INIT_LIST_HEAD(&dev->ctxlist);
 	INIT_LIST_HEAD(&dev->vmalist);
 	INIT_LIST_HEAD(&dev->maplist);
@@ -512,14 +527,27 @@ int drm_dev_init(struct drm_device *dev,
 	spin_lock_init(&dev->event_lock);
 	mutex_init(&dev->struct_mutex);
 	mutex_init(&dev->filelist_mutex);
+	mutex_init(&dev->clientlist_mutex);
 	mutex_init(&dev->ctxlist_mutex);
 	mutex_init(&dev->master_mutex);
+
+	kthread_init_worker(&dev->bridge_enable_worker);
+	dev->bridge_enable_task = kthread_run(kthread_worker_fn,
+					      &dev->bridge_enable_worker,
+					      "drm_bridge_enable");
+	if (IS_ERR(dev->bridge_enable_task)) {
+		ret = PTR_ERR(dev->bridge_enable_task);
+		DRM_ERROR("Cannot create bridge_enable kthread: %d\n", ret);
+		goto err_free;
+	}
+	kthread_init_work(&dev->bridge_enable_work, drm_bridge_enable_work);
+	sched_setscheduler_nocheck(dev->bridge_enable_task, SCHED_FIFO, &param);
 
 	dev->anon_inode = drm_fs_inode_new();
 	if (IS_ERR(dev->anon_inode)) {
 		ret = PTR_ERR(dev->anon_inode);
 		DRM_ERROR("Cannot allocate anonymous inode: %d\n", ret);
-		goto err_free;
+		goto err_kthread;
 	}
 
 	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
@@ -571,8 +599,11 @@ err_minors:
 	drm_minor_free(dev, DRM_MINOR_RENDER);
 	drm_minor_free(dev, DRM_MINOR_CONTROL);
 	drm_fs_inode_free(dev->anon_inode);
+err_kthread:
+	kthread_stop(dev->bridge_enable_task);
 err_free:
 	mutex_destroy(&dev->master_mutex);
+	mutex_destroy(&dev->clientlist_mutex);
 	return ret;
 }
 EXPORT_SYMBOL(drm_dev_init);
@@ -634,7 +665,10 @@ static void drm_dev_release(struct kref *ref)
 	drm_minor_free(dev, DRM_MINOR_RENDER);
 	drm_minor_free(dev, DRM_MINOR_CONTROL);
 
+	kthread_flush_worker(&dev->bridge_enable_worker);
+	kthread_stop(dev->bridge_enable_task);
 	mutex_destroy(&dev->master_mutex);
+	mutex_destroy(&dev->clientlist_mutex);
 	kfree(dev->unique);
 	kfree(dev);
 }

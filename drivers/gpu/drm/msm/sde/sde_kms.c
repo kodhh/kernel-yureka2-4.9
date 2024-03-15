@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -1074,7 +1074,7 @@ static void sde_kms_complete_commit(struct msm_kms *kms,
 			continue;
 		rc = c_conn->ops.post_kickoff(connector);
 		if (rc) {
-			pr_err("Connector Post kickoff failed rc=%d\n",
+			pr_debug("Connector Post kickoff failed rc=%d\n",
 					 rc);
 		}
 	}
@@ -1314,6 +1314,7 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		.get_info   = dp_connector_get_info,
 		.get_mode_info  = dp_connector_get_mode_info,
 		.post_open  = dp_connector_post_open,
+		.set_power = dp_display_set_power,
 		.check_status = NULL,
 		.config_hdr = dp_connector_config_hdr,
 		.cmd_transfer = NULL,
@@ -1333,7 +1334,7 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		.get_dst_format = dsi_display_get_dst_format,
 		.enable_event = dsi_conn_enable_event,
 		.cmd_transfer = NULL,
-		.cont_splash_config = NULL,
+		.cont_splash_config = dsi_display_cont_splash_config,
 	};
 	struct msm_display_info info;
 	struct drm_encoder *encoder;
@@ -3397,7 +3398,7 @@ static int sde_kms_hw_init(struct msm_kms *kms)
 
 	_sde_kms_core_hw_rev_init(sde_kms);
 
-	pr_info("sde hardware revision:0x%x\n", sde_kms->core_rev);
+	pr_debug("sde hardware revision:0x%x\n", sde_kms->core_rev);
 
 	sde_kms->catalog = sde_hw_catalog_init(dev, sde_kms->core_rev);
 	if (IS_ERR_OR_NULL(sde_kms->catalog)) {
