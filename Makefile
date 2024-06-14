@@ -656,19 +656,25 @@ export CFLAGS_GCOV CFLAGS_KCOV
 # Make toolchain changes before including arch/$(SRCARCH)/Makefile to ensure
 # ar/cc/ld-* macros return correct values.
 ifdef CONFIG_LTO_CLANG
-ifneq ($(ld-name),lld)
-# use GNU gold with LLVMgold for LTO linking, and LD for vmlinux_link
-LDFINAL_vmlinux := $(LD)
-LD		:= $(LDGOLD)
-LDFLAGS		+= -plugin LLVMgold.so
-endif
-# use llvm-ar for building symbol tables from IR files, and llvm-dis instead
+# use llvm-ar for building symbol tables from IR files, and llvm-nm instead
 # of objdump for processing symbol versions and exports
+ifneq ($(findstring llvm-ar,$(AR)),)
+LLVM_AR		:= $(AR)
+else
 LLVM_AR		:= llvm-ar
+endif
+
+ifneq ($(findstring llvm-nm,$(NM)),)
+LLVM_NM		:= $(NM)
+else
 LLVM_NM		:= llvm-nm
+endif
+
 export LLVM_AR LLVM_NM
+
 # Set O3 optimization level for LTO
 LDFLAGS		+= --plugin-opt=O3
+
 endif
 
 # The arch Makefile can set ARCH_{CPP,A,C}FLAGS to override the default

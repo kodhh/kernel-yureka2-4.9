@@ -89,7 +89,13 @@ ifeq ($(CONFIG_COMPAT_VDSO), y)
   endif
 endif
 
-KBUILD_CFLAGS	+= -mgeneral-regs-only $(lseinstr) $(vdso32)
+ifeq ($(cc-name),clang)
+KBUILD_CFLAGS	+= -mno-implicit-float
+else
+KBUILD_CFLAGS	+= -mgeneral-regs-only
+endif
+
+KBUILD_CFLAGS	+= $(lseinstr) $(vdso32)
 KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
 KBUILD_CFLAGS	+= $(call cc-option, -mpc-relative-literal-loads)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, psabi)
