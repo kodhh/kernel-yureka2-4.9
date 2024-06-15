@@ -1464,6 +1464,12 @@ config TOUCHSCREEN_GT9XX_v24
 
 source "drivers/input/touchscreen/gt9xx_v2.4/Kconfig"
 
+config TOUCHSCREEN_GT915L
+	tristate "GT915L touchscreens"
+	depends on I2C
+
+source "drivers/input/touchscreen/GT915L/Kconfig"
+
 source "drivers/input/touchscreen/FT5346/Kconfig"
 
 endif
